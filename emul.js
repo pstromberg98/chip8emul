@@ -37,22 +37,23 @@ console.log(JSON.stringify(state));
 
 async function executeInstruction(state, instruction) {
     console.log(instruction.toString(16));
-    if (instruction[0] + instruction[1] == 0x00E0) {
+    if (instruction[0] === 0 && instruction[1] == 0xE0) {
         // CLR: Clear Screen
         state.display.clear();
         state.pc += 2;
         console.log('Clear Screen!');
-    } else if (instruction[0] + instruction[1] == 0x00EE) {
+    } else if (instruction[0] === 0 && instruction[1] == 0xEE) {
         // RET: Return from subroutine
         state.pc = state.stack[state.sp];
+        console.log('Set PC: ', state.pc);
+        console.log('SP ', state.sp);
         state.sp--;
     } else if (instruction[0] >> 4 == 0x00) {
         // SYS addr
         // Jump to a machine code routine at nnn. Meant to be ignored
-        // console.warn('This instruction is being ignored...');
-        state.pc++;
+        console.warn('This instruction is being ignored...');
+        state.pc += 2;
     } else {
-
         switch (instruction[0] >> 4) {
             case 0x1:
                 // JMP
@@ -309,7 +310,7 @@ function Display() {
     let displayBuffer = Buffer.alloc(64 * 32).fill(0);
 
     this.togglePixel = (x, y) => {
-        const idx = (y * 8) + x;
+        const idx = (y * 64) + x;
         const collision = !!displayBuffer[idx];
         displayBuffer[idx] ^= 1;
 
@@ -322,10 +323,11 @@ function Display() {
 
     this.repaint = () => {
         console.clear();
+
         let output = '';
         for (let i = 0; i < displayBuffer.length; i++) {
             output += getByteChars(displayBuffer[i]);
-            if (i !== 0 && (i % 8) === 0) {
+            if (i !== 0 && (i % 64) === 0) {
                 output += '\n';
             }
         }
@@ -335,19 +337,12 @@ function Display() {
 
     function getByteChars(byte) {
         let out = '';
-        const checks = [0b10000000, 0b01000000, 0b00100000, 0b00010000, 0b00001000, 0b00000100, 0b00000010, 0b00000001];
-        for (let i = 0; i < checks.length; i++) {
-            if ((byte & checks[i]) != 0) {
-                out += '*';
-            } else {
-                out += '-';
-            }
+        if (byte === 1) {
+            out += '*';
+        } else {
+            out += ' ';
         }
 
         return out;
-    }
-    
-    function willFlipBit(byteA, byteB) {
-        return byteA & byteB != 0;
     }
 }

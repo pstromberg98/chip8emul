@@ -20,9 +20,10 @@ setInterval(() => {
 }, 17);
 
 // Sets up general purpose registers
-for (let i = 0; i < 15; i++) {
+for (let i = 0; i < 16; i++) {
     state[`v${i}`] = 0;
 }
+console.log(JSON.stringify(state));
 
 // const stdin = process.openStdin(); 
 
@@ -35,12 +36,11 @@ for (let i = 0; i < 15; i++) {
 // });
 
 async function executeInstruction(state, instruction) {
-    console.log(instruction);
-    const pc = state.pc;
-
+    console.log(instruction.toString(16));
     if (instruction[0] + instruction[1] == 0x00E0) {
         // CLR: Clear Screen
         state.display.clear();
+        state.pc += 2;
         console.log('Clear Screen!');
     } else if (instruction[0] + instruction[1] == 0x00EE) {
         // RET: Return from subroutine
@@ -50,6 +50,7 @@ async function executeInstruction(state, instruction) {
         // SYS addr
         // Jump to a machine code routine at nnn. Meant to be ignored
         // console.warn('This instruction is being ignored...');
+        state.pc++;
     } else {
 
         switch (instruction[0] >> 4) {
@@ -66,33 +67,38 @@ async function executeInstruction(state, instruction) {
             case 0x3:
                 // SE Vx, byte
                 // Compares register Vx to kk, if equal, increment program counter by 2
-                if (state[`v${instruction[0] & 0xF}`] == instruction[1]) {
+                if (state[`v${instruction[0] & 0xF}`] === instruction[1]) {
                     state.pc += 2;
                 }
+                state.pc += 2;
                 break;
             case 0x4:
                 // SNE Vx, byte
                 // Compares register Vx to kk, if not equal, increment program counter by 2
-                if (state[`v${instruction[0] & 0xF}`] != instruction[1]) {
+                if (state[`v${instruction[0] & 0xF}`] !== instruction[1]) {
                     state.pc += 2;
                 }
+                state.pc += 2;
                 break;
             case 0x5:
                 // SE Vx, Vy
                 // Compares register Vx to Vy, if equal, increment program counter by 2
-                if (state[`v${instruction[0] & 0xF}`] != state[`v${instruction[0] >> 4}`]) {
+                if (state[`v${instruction[0] & 0xF}`] === state[`v${instruction[0] >> 4}`]) {
                     state.pc += 2;
                 }
+                state.pc += 2;
                 break;
             case 0x6:
                 // Set Vx = kk
                 // The interpreter puts the value kk into register Vx
                 state[`v${instruction[0] & 0xF}`] = instruction[1];
+                state.pc += 2;
                 break;
             case 0x7:
                 // Set Vx = Vx + kk.
                 // Adds the value kk to the value of register Vx, then stores the result in Vx
                 state[`v${instruction[0] & 0xF}`] += instruction[1];
+                state.pc += 2;
                 break;
             case 0x8:
                 const lastByte = instruction[1] & 0xF;
@@ -135,7 +141,7 @@ async function executeInstruction(state, instruction) {
                         state['v15'] = 0;
                     }
 
-                    state[`v${instruction[0] & 0xF}`] = xReg / 2;
+                    state[`v${instruction[0] & 0xF}`] = xReg >> 1;
                 } else if (lastByte === 7) {
                     // Set Vx = Vx - Vy
                     state['v15'] = yReg > xReg ? 1 : 0;
@@ -149,42 +155,59 @@ async function executeInstruction(state, instruction) {
                     }
 
                     state[`v${instruction[0] & 0xF}`] = xReg * 2;
+                } else {
+                    
                 }
+                state.pc += 2;
                 break;
             case 0x9:
                 // Skip next instruction if Vx != Vy.
-                if (state[`v${instruction[0] & 0xF}`] != state[`v$${instruction[1] >> 4}`]) {
+                if (state[`v${instruction[0] & 0xF}`] != state[`v${instruction[1] >> 4}`]) {
                     state.pc += 2;
                 }
+                state.pc += 2;
                 break;
             case 0xA:
-                state.i = (instruction[0] & 0xF) + instruction[1];
+                state.i = ((instruction[0] & 0xF) << 8) | instruction[1];
+                console.log('I: ', state.i);
+                state.pc += 2;
                 break;
             case 0xB:
-                state.pc = state['v0'] + (instruction[0] & 0xF) + instruction[1];
+                state.pc = state['v0'] + (((instruction[0] & 0xF) << 8) | instruction[1]);
                 break;
             case 0xC:
-                state[`v${instruction[0] & 0xF}`] = ((Math.random() * 255) - 1) & instruction[1];
+                state[`v${instruction[0] & 0xF}`] = Math.floor(Math.random() * (0xFF + 1)) & instruction[1];
+                state.pc += 2;
                 break;
             case 0xD:
                 // NEEDS TO BE FINISHED!
                 const n = instruction[1] & 0xF;
                 const x = state[`v${instruction[0] & 0xF}`] || 0;
                 const y = state[`v${instruction[1] >> 4}`] || 0;
-                const index = state.i;
-                const bytesToDisplay = [];
 
-                for (let i = 0; i < n; i++) {
-                    bytesToDisplay.push(state.memory[index + i]);
+                state['v15'] = 0;
+                for (let hline = 0; hline < n; ++hline) {
+                    const membyte = state.memory[state.i + hline];
+        
+                    for  (let vline = 0; vline < 8; ++vline) {
+                        if ((membyte & (0x80 >> vline)) !== 0) {
+                            const coll = state.display.togglePixel(x + vline, y + hline);
+                            if (coll) {
+                                state['v15'] = 1;
+                            }
+                        }
+                    }
                 }
 
-                state['v15'] = state.display.write(x, y, bytesToDisplay);
+                state.display.repaint();
+                state.pc += 2;
                 break;
             case 0xE:
+                state.pc += 2;
                 break;
             case 0xF:
                 if (instruction[1] == 0x07) {
-                    state[`${instruction[0] & 0xF}`] = state.x;
+                    state[`${instruction[0] & 0xF}`] = state.dt;
                 } else if (instruction[1] == 0x0A) {
                     // TODO: Add mappings
                     process.stdin.setRawMode(true);
@@ -208,17 +231,17 @@ async function executeInstruction(state, instruction) {
                 } else if (instruction[1] == 0x18) {
                     state.st = state[`v${instruction[0] & 0xF}`];
                 } else if (instruction[1] == 0x1E) {
-                    state.i += state[`v${instruction[0] & 0xF}`];
+                    state.i = state.i + state[`v${instruction[0] & 0xF}`];
                 } else if (instruction[1] == 0x29) {
-                    const digit = instruction[0] & 0xF;
+                    const digit = state[`v${instruction[0] & 0xF}`];
                     state.i = digit * 5;
                     console.log('Digit: ' + digit);
                     // Needs implementation 
                 } else if (instruction[1] == 0x33) {
                     const xReg = state[`v${instruction[0] & 0xF}`];
-                    state.memory[state.i] = xReg.toString()[0] || 0;
-                    state.memory[state.i + 1] = xReg.toString()[1] || 0;
-                    state.memory[state.i + 2] = xReg.toString()[2] || 0;
+                    state.memory[state.i] = parseInt(xReg / 100, 10);
+                    state.memory[state.i + 1] = parseInt(xReg % 100 / 10, 0);
+                    state.memory[state.i + 2] = xReg % 10;
                 } else if (instruction[1] == 0x55) {
                     const x = instruction[0] & 0xF;
                     for (let i = 0; i < x + 1; i++) {
@@ -227,19 +250,17 @@ async function executeInstruction(state, instruction) {
                 } else if (instruction[1] == 0x65) {
                     const x = instruction[0] & 0xF;
                     for (let i = 0; i < x + 1; i++) {
+                        console.log('Writing V: ' + state.memory[state.i + i]);
                         state[`v${i}`] = state.memory[state.i + i];
                     }
                 } else {
                     throw new Error('Unimplemented Instruction');
                 }
+                state.pc += 2;
                 break;
             default:
                 throw new Error('Unimplemented Instruction: ' + instruction[0].toString(16));
         }
-    }
-
-    if (pc === state.pc) {
-        state.pc += 2;
     }
 }
 
@@ -287,38 +308,26 @@ function Display() {
     const height = 32;
     let displayBuffer = Buffer.alloc(64 * 32).fill(0);
 
-    this.write = (x, y, buffer) => {
-        let erasedPixels = false;
+    this.togglePixel = (x, y) => {
+        const idx = (y * 8) + x;
+        const collision = !!displayBuffer[idx];
+        displayBuffer[idx] ^= 1;
 
-        for (let i = 0; i < buffer.length; i++) {
-            const startAddr = (y * 8) + x;
-            if (displayBuffer[startAddr] ^ buffer[i] !== buffer[i]) {
-                erasedPixels = true;
-            }
-
-            displayBuffer[startAddr] = displayBuffer[startAddr] ^ buffer[i];
-            y++;
-        }
-
-        drawToConsole();
-        console.log(displayBuffer);
-        return erasedPixels;
-    };
+        return collision;
+    }
 
     this.clear = () => {
         displayBuffer = displayBuffer.fill(0);
     }
 
-    function drawToConsole() {
-        // console.clear();
+    this.repaint = () => {
+        console.clear();
         let output = '';
-        for (let y = 0; y < height; y++) {
-            let line = '';
-            for (let x = 0; x < 8; x++) {
-                line += getByteChars(displayBuffer[(y * 8) + x]);
+        for (let i = 0; i < displayBuffer.length; i++) {
+            output += getByteChars(displayBuffer[i]);
+            if (i !== 0 && (i % 8) === 0) {
+                output += '\n';
             }
-
-            output += line + '\n';
         }
 
         console.log(output);
@@ -331,7 +340,7 @@ function Display() {
             if ((byte & checks[i]) != 0) {
                 out += '*';
             } else {
-                out += ' ';
+                out += '-';
             }
         }
 
